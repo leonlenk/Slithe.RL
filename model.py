@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
+import numpy as np
 from torch.distributions import Categorical
 import gymnasium as gym
 from stable_baselines3 import PPO
@@ -34,11 +36,13 @@ class ResidualBlock(nn.Module):
 
 class ResNetCNNExtractor(nn.Module):
     def __init__(self, env, features_dim=512):
-        super(ResNetCNNPolicy, self).__init__()
+        super(ResNetCNNExtractor, self).__init__()
 
         self.state_space = env.observation_space.shape
+        print(self.state_space)
         self.action_space = env.action_space.n
 
+        # if the channel dim is not permuted, the input shape is (batch_size, height, width, channels) so use -1 instead
         n_input_channels = self.state_space[0]
         features_dim = 512
 
@@ -55,7 +59,8 @@ class ResNetCNNExtractor(nn.Module):
         
         # Compute shape by doing one forward pass
         with torch.no_grad():
-            n_flatten = self.flatten(self._forward_conv(torch.as_tensor(observation_space.sample()[None]).float())).shape[1]
+            print(self.flatten(self._forward_conv(torch.as_tensor(env.observation_space.sample()[None]).float())).shape)
+            n_flatten = self.flatten(self._forward_conv(torch.as_tensor(env.observation_space.sample()[None]).float())).shape[1]
             
         self.linear = nn.Sequential(
             nn.Linear(n_flatten, features_dim),
@@ -190,6 +195,8 @@ class ResNetCNN(BaseFeaturesExtractor):
         )
 
     def _forward_conv(self, x):
+        # make channel first dim
+        x = x.permute(0, 3, 1, 2)
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.layer1(x)
         x = self.layer2(x)

@@ -1,2 +1,5 @@
 # ignore the Multi-Agent-Ale folder
 Multi-Agent-Ale/
+
+# pycache
+__pycache__/
