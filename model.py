@@ -1,10 +1,11 @@
-import torch as th
+import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.policies import ActorCriticCnnPolicy
+
 # https://github.com/tims457/RL_Agent_Notebooks/blob/master/Policy%20Gradient%20with%20Cartpole%20and%20PyTorch.ipynb
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
@@ -53,8 +54,8 @@ class ResNetCNNExtractor(nn.Module):
         self.flatten = nn.Flatten()
         
         # Compute shape by doing one forward pass
-        with th.no_grad():
-            n_flatten = self.flatten(self._forward_conv(th.as_tensor(observation_space.sample()[None]).float())).shape[1]
+        with torch.no_grad():
+            n_flatten = self.flatten(self._forward_conv(torch.as_tensor(observation_space.sample()[None]).float())).shape[1]
             
         self.linear = nn.Sequential(
             nn.Linear(n_flatten, features_dim),
@@ -124,7 +125,7 @@ class Policy(nn.Module):
         
         # Discount future rewards back to the present using gamma
         for r in self.reward_episode[::-1]:
-            R = r + policy.gamma * R
+            R = r + self.gamma * R
             rewards.insert(0,R)
             
             # Scale rewards
@@ -143,7 +144,7 @@ class Policy(nn.Module):
             self.loss_history.append(loss.data[0])
             self.reward_history.append(np.sum(self.reward_episode))
             self.policy_history = Variable(torch.Tensor())
-            self.reward_episode= []
+            self.reward_episode = []
 
     def run_episode(self, env, episodes):
         for episode in range(episodes):
@@ -174,8 +175,8 @@ class ResNetCNN(BaseFeaturesExtractor):
         self.flatten = nn.Flatten()
         
         # Compute shape by doing one forward pass
-        with th.no_grad():
-            n_flatten = self.flatten(self._forward_conv(th.as_tensor(observation_space.sample()[None]).float())).shape[1]
+        with torch.no_grad():
+            n_flatten = self.flatten(self._forward_conv(torch.as_tensor(observation_space.sample()[None]).float())).shape[1]
             
         self.linear = nn.Sequential(
             nn.Linear(n_flatten, features_dim),
