@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+import torch.optim as optim
 import numpy as np
 from torch.distributions import Categorical
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.policies import ActorCriticCnnPolicy
+
+import matplotlib.pyplot as plt
 
 # https://github.com/tims457/RL_Agent_Notebooks/blob/master/Policy%20Gradient%20with%20Cartpole%20and%20PyTorch.ipynb
 class ResidualBlock(nn.Module):
@@ -101,69 +103,106 @@ class Policy(nn.Module):
         )
         
         # Episode policy and reward history 
-        self.policy_history = Variable(torch.Tensor()) 
+        self.policy_history = torch.Tensor()
         self.reward_episode = []
         # Overall reward and loss history
         self.reward_history = []
         self.loss_history = []
+        self.gamma = 0.99
 
     def forward(self, x):    
-        model = torch.nn.Sequential(
-            self.l1,
-            nn.Dropout(p=0.6),
-            nn.ReLU(),
-            self.l2,
-            nn.Softmax(dim=-1)
-        )
-        return model(x)
+        logits = self.policy(x)
+        return logits 
 
     def select_action(self, state):
         feat = self.feature_extractor(state)
-        probs = self.policy(feat)
+        logits = self.policy(feat)
+        probs = torch.softmax(logits, dim=-1)
+        # print("Logits:", logits)
+        # print("Probs:", probs)
 
-        c = Categorical(probs)
+        c = Categorical(probs=probs)
         action = c.sample()
+        # print("Action:", action)
 
-    def update_policy(self):
+        # Add log probability of our chosen action to our history    
+        if self.policy_history.dim() != 0:
+            self.policy_history = torch.cat([self.policy_history, c.log_prob(action)])
+        else:
+            self.policy_history = (c.log_prob(action))
+
+        return action
+
+    def update_policy(self, optimizer):
         R = 0
         rewards = []
         
         # Discount future rewards back to the present using gamma
         for r in self.reward_episode[::-1]:
             R = r + self.gamma * R
-            rewards.insert(0,R)
-            
-            # Scale rewards
-            rewards = torch.FloatTensor(rewards)
-            rewards = (rewards - rewards.mean()) / (rewards.std() + np.finfo(np.float32).eps)
-            
-            # Calculate loss
-            loss = (torch.sum(torch.mul(self.policy_history, Variable(rewards)).mul(-1), -1))
-            
-            # Update network weights
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            #Save and intialize episode history counters
-            self.loss_history.append(loss.data[0])
-            self.reward_history.append(np.sum(self.reward_episode))
-            self.policy_history = Variable(torch.Tensor())
-            self.reward_episode = []
+            rewards.insert(0, R)
+        
+
+        # Scale rewards
+        rewards = torch.FloatTensor(rewards)
+        print(f"{rewards.sum()=}")
+        rewards = (rewards - rewards.mean()) / (rewards.std() + np.finfo(np.float32).eps)
+        
+        # Calculate loss
+        # loss = $- \sum_i log(\pi(a_i|s_i)) * R_i$
+        policy_loss = (torch.sum(torch.mul(self.policy_history, rewards).mul(-1)))
+
+        # Calculate entropy loss
+        # Regularization term to encourage exploration (higher entropy when probabilities are closer)
+        probs = torch.exp(self.policy_history)  # Convert log_probs back to probs
+        entropy_loss = -torch.sum(probs * torch.log(probs + 1e-10))  # Adding a small value to avoid log(0)
+        
+        loss = policy_loss + 0.005 * entropy_loss
+
+        print(f"{loss=}")
+        
+        # Update network weights
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Save and initialize episode history counters
+        self.loss_history.append(loss.data.item())
+        self.reward_history.append(np.sum(self.reward_episode))
+        self.policy_history = torch.Tensor()
+        self.reward_episode= []
 
     def run_episode(self, env, episodes):
+        optimizer = optim.Adam(self.parameters(), lr=1e-2)
+
         for episode in range(episodes):
-            state = env.reset()
+            obs, info = env.reset()
             done = False
+            steps = 0
             while not done:
-                action = self.select_action(state)
-                state, reward, done, _ = env.step(action)
+                steps += 1
+                obs = torch.from_numpy(obs).float().unsqueeze(0)
+                action = self.select_action(obs)
+            
+                obs, reward, terminated, truncated, info = env.step(action)
                 self.reward_episode.append(reward)
+                done = terminated or truncated
+
+            
+            print(f"Episode: {episode}, Steps: {steps}")
+            self.plot_reward_episode()
             # Compute the loss and update the policy
-            self.update_policy()
+            self.update_policy(optimizer)
 
-# Stable Baselines3 custom CNN policy with residual blocks
+    def plot_reward_episode(self):
+        plt.plot(self.reward_episode)
+        plt.title('Reward over time')
+        plt.ylabel('Reward')
+        plt.xlabel('Steps')
+        plt.show
+        
 
+# Stable Baselines3 custom CNN policy with residual block (Ignore below)
 class ResNetCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=512):
         super(ResNetCNN, self).__init__(observation_space, features_dim)
