@@ -3,7 +3,7 @@ import numpy as np
 
 # Define a wrapper for Gym env to add survival rewards
 class RewardWrapper(gym.Wrapper):
-    def __init__(self, env, survival_reward=0.0001):
+    def __init__(self, env, survival_reward=0.001):
         super(RewardWrapper, self).__init__(env)
         self.survival_reward = survival_reward
 

@@ -142,10 +142,10 @@ class Policy(nn.Module):
             R = r + self.gamma * R
             rewards.insert(0, R)
         
+        print(f"{R=}")
 
         # Scale rewards
         rewards = torch.FloatTensor(rewards)
-        print(f"{rewards.sum()=}")
         rewards = (rewards - rewards.mean()) / (rewards.std() + np.finfo(np.float32).eps)
         
         # Calculate loss
@@ -190,7 +190,7 @@ class Policy(nn.Module):
 
             
             print(f"Episode: {episode}, Steps: {steps}")
-            self.plot_reward_episode()
+            # self.plot_reward_episode()
             # Compute the loss and update the policy
             self.update_policy(optimizer)
 
